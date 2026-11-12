@@ -450,6 +450,20 @@
             gap: 2rem;
         }
 
+        .pdf-viewer.presentation-mode {
+            padding: 0;
+            gap: 0;
+            overflow: hidden;
+        }
+
+        .presentation-frame {
+            width: 100%;
+            flex: 1;
+            min-height: 600px;
+            border: none;
+            background: #fff;
+        }
+
         .pdf-page {
             max-width: 100%;
             box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
@@ -633,7 +647,7 @@
                     </div>
                 </div>
                 
-                <div class="document-card" onclick="window.open('https://drive.google.com/drive/folders/1-S9eBhVHlZgUbe8FBuppyvCkh9KJSz6-?usp=sharing', '_blank')">
+                <div class="document-card" onclick="window.open('gallery.html', '_blank')">
                     <span class="card-icon">🖼️</span>
                     <h3 class="card-title">Gallery</h3>
                     <p class="card-description">Event photos and highlights from our recent activities.</p>
@@ -649,6 +663,16 @@
                     <p class="card-description">Value Chain Manuals and Guides - These are training and reference materials for various value chains.</p>
                     <div class="card-footer">
                         <span class="card-type">Value Chain Manuals and Guides</span>
+                        <div class="card-arrow">→</div>
+                    </div>
+                </div>
+
+                <div class="document-card" onclick="openDocumentList('presentation', 'Presentations')">
+                    <span class="card-icon">📽️</span>
+                    <h3 class="card-title">Presentations</h3>
+                    <p class="card-description">Presentations - Slides and materials for various presentations.</p>
+                    <div class="card-footer">
+                        <span class="card-type">Presentations</span>
                         <div class="card-arrow">→</div>
                     </div>
                 </div>
@@ -685,7 +709,7 @@
         
         <div class="header">
             <div class="header-left">
-                <button class="back-btn" onclick="goBackToLanding()">
+                <button class="back-btn" onclick="goBackToPreviousPage()">
                     ← Back
                 </button>
                 <button class="download-btn" id="download-btn" onclick="downloadDocument()" disabled>
@@ -730,6 +754,7 @@
                 this.currentDocument = null;
                 this.pdfViewer = null;
                 this.currentPage = 'landing'; // 'landing', 'list', 'viewer'
+                this.lastList = null; // remembers which list the viewer was opened from
                 this.valueChainDocuments = [
                     {
                         id: 'aquaculture-guide',
@@ -887,6 +912,21 @@
                     }
 
                 ];
+
+                // ---- PRESENTATIONS (PPT / PPTX) ----
+                // Put your files in a "presentations" folder next to this HTML file
+                // and edit/add entries below. .pptx/.ppt files open in an Office
+                // preview (needs the site to be publicly reachable); .pdf files
+                // open in the built-in PDF viewer. Download always works.
+                this.presentations = [
+                    {
+                        id: 'presentation-1',
+                        name: 'GEAP CLOSE OUT FORUM',
+                        description: 'GEAP CLOSE OUT FORUM',
+                        path: 'presentations/dkinoti.pdf',
+                        icon: '📽️'
+                    }
+                ];
                 this.initializePortal();
             }
             
@@ -894,20 +934,65 @@
                 // Set PDF.js worker
                 pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
             }
+
+            isPdf(path) {
+                return /\.pdf$/i.test(path);
+            }
             
             openDocument(docId, title, pdfPath) {
-                // Hide landing page and show PDF viewer
+                // Hide landing page and show viewer
                 document.getElementById('landing-page').style.display = 'none';
                 document.getElementById('document-list-page').classList.remove('active');
                 document.getElementById('pdf-viewer-page').classList.add('active');
                 
                 // Update document title
                 document.getElementById('document-title').textContent = `📄 ${title}`;
-                
-                // Initialize PDF viewer for this document
-                this.pdfViewer = new ContinuousPDFViewer(pdfPath);
+
+                // Clean up whatever was open before
+                if (this.pdfViewer) {
+                    this.pdfViewer.cleanup();
+                    this.pdfViewer = null;
+                }
+                document.getElementById('pdf-viewer').classList.remove('presentation-mode');
+
                 this.currentDocument = { id: docId, title, path: pdfPath };
                 this.currentPage = 'viewer';
+
+                if (this.isPdf(pdfPath)) {
+                    // Initialize PDF viewer for this document
+                    this.pdfViewer = new ContinuousPDFViewer(pdfPath);
+                } else {
+                    this.openPresentation(pdfPath);
+                }
+            }
+
+            openPresentation(path) {
+                const viewer = document.getElementById('pdf-viewer');
+                const downloadBtn = document.getElementById('download-btn');
+                const info = document.getElementById('document-info');
+
+                // PDF zoom controls don't apply to presentations
+                ['zoom-in', 'zoom-out', 'fit-width'].forEach(id => {
+                    document.getElementById(id).disabled = true;
+                });
+                document.getElementById('zoom-level').textContent = '100%';
+                document.getElementById('page-progress').style.width = '0%';
+
+                downloadBtn.disabled = false;
+                info.textContent = 'Presentation • use Download if the preview does not load';
+
+                const absoluteUrl = new URL(path, window.location.href).href;
+                const embedUrl = 'https://view.officeapps.live.com/op/embed.aspx?src=' + encodeURIComponent(absoluteUrl);
+
+                viewer.classList.add('presentation-mode');
+                viewer.innerHTML = '';
+
+                const frame = document.createElement('iframe');
+                frame.className = 'presentation-frame';
+                frame.src = embedUrl;
+                frame.setAttribute('allowfullscreen', 'true');
+                frame.title = 'Presentation viewer';
+                viewer.appendChild(frame);
             }
             
             openDocumentList(category, title) {
@@ -915,14 +1000,25 @@
                 document.getElementById('landing-page').style.display = 'none';
                 document.getElementById('pdf-viewer-page').classList.remove('active');
                 document.getElementById('document-list-page').classList.add('active');
+
+                // Clean up the viewer if we came back from it
+                if (this.pdfViewer) {
+                    this.pdfViewer.cleanup();
+                    this.pdfViewer = null;
+                }
+                const viewer = document.getElementById('pdf-viewer');
+                viewer.classList.remove('presentation-mode');
+                viewer.innerHTML = '';
                 
                 // Update list title
-                document.getElementById('list-title').textContent = `⛓️ ${title}`;
+                const icon = category === 'presentation' ? '📽️' : '⛓️';
+                document.getElementById('list-title').textContent = `${icon} ${title}`;
                 document.getElementById('list-subtitle').textContent = 'Select a document to view';
                 
                 // Populate document list based on category
                 this.populateDocumentList(category);
                 this.currentPage = 'list';
+                this.lastList = { category, title };
             }
             
             populateDocumentList(category) {
@@ -932,6 +1028,8 @@
                 let documents = [];
                 if (category === 'value-chain') {
                     documents = this.valueChainDocuments;
+                } else if (category === 'presentation') {
+                    documents = this.presentations;
                 }
                 
                 documents.forEach(doc => {
@@ -963,6 +1061,11 @@
                     this.pdfViewer.cleanup();
                     this.pdfViewer = null;
                 }
+
+                // Clear any presentation preview
+                const viewer = document.getElementById('pdf-viewer');
+                viewer.classList.remove('presentation-mode');
+                viewer.innerHTML = '';
                 
                 this.currentDocument = null;
                 this.currentPage = 'landing';
@@ -970,9 +1073,9 @@
             
             goBackToPreviousPage() {
                 if (this.currentPage === 'viewer') {
-                    // Go back to document list if we came from there
-                    if (this.currentDocument && this.currentDocument.id.includes('value-chain')) {
-                        this.openDocumentList('value-chain', 'Value Chain Manuals and Guides');
+                    // Go back to the list we came from, if any
+                    if (this.lastList) {
+                        this.openDocumentList(this.lastList.category, this.lastList.title);
                     } else {
                         this.goBackToLanding();
                     }
@@ -987,7 +1090,8 @@
                 // Create a temporary link element
                 const link = document.createElement('a');
                 link.href = this.currentDocument.path;
-                link.download = this.currentDocument.title + '.pdf';
+                const ext = (this.currentDocument.path.match(/\.[a-z0-9]+$/i) || ['.pdf'])[0];
+                link.download = this.currentDocument.title + ext;
                 
                 // Trigger download
                 document.body.appendChild(link);
